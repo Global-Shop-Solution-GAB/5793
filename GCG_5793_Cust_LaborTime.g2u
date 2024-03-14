@@ -1,0 +1,284 @@
+Program.Sub.ScreenSU.Start
+Gui.Form..Create
+Gui.Form..Size(11355,7545)
+Gui.Form..MinX(11355)
+Gui.Form..MinY(7545)
+Gui.Form..Position(0,0)
+Gui.Form..BackColor(-2147483633)
+Gui.Form..MousePointer(0)
+Gui.Form..Event(UnLoad,Unload)
+Gui.Form..Caption("Labor Time per Customer")
+Gui.Form.dtpFrom.Create(DatePicker)
+Gui.Form.dtpFrom.Size(1935,285)
+Gui.Form.dtpFrom.Position(225,420)
+Gui.Form.dtpTo.Create(DatePicker)
+Gui.Form.dtpTo.Size(1935,285)
+Gui.Form.dtpTo.Position(2895,420)
+Gui.Form.cmd1.Create(Button)
+Gui.Form.cmd1.Size(855,375)
+Gui.Form.cmd1.Position(5535,345)
+Gui.Form.cmd1.Caption("Refresh")
+Gui.Form.cmd1.Event(Click,Refresh)
+Gui.Form.gsgcCustGrid.Create(GsGridControl)
+Gui.Form.gsgcCustGrid.Size(10845,6120)
+Gui.Form.gsgcCustGrid.Position(225,810)
+Gui.Form.lbl1.Create(Label,"From Date:",True,1935,255,0,225,195,True,0,"Arial",8,-2147483633,0)
+Gui.Form.lbl2.Create(Label,"To Date:",True,1935,255,0,2895,195,True,0,"Arial",8,-2147483633,0)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'This project was created for Dyna Holdings. We are creating a dashboard for them that will display their custoemrs and how much time they have consumed for that customer in Labor WO sequences during a specific timeframe.
+'The user will be able to select the time range using datepickers. 
+'FEQ 12/06/2019 as piecework. Tables grabbing information from are V_JOB_OPERATIONS, V_JOB_HISt_OPS, V_CUSTOMER_MASTER
+
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+
+F.Intrinsic.Control.CallSub(PreLoading)
+Gui.Form.gsgcCustGrid.Enabled(False)
+Gui.Form..Show
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Unload.End
+
+Program.Sub.Refresh.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+V.Local.iDiffr.Declare(Long, 0)
+
+Gui.Form.gsgcCustGrid.Enabled(False)
+F.Data.DataTable.SetValue("dtCusts", -1, "Time_Hours", 0)
+
+'Anytime they click on refresh, we want to re-populate teh work order information and calculate values
+F.Intrinsic.Date.DateDiff("D", V.Screen.Form!dtpTo.Value, V.Screen.Form!dtpFrom.Value, V.Local.iDiffr)
+
+F.Intrinsic.Control.If(V.Local.iDiffr, >, 0)
+	Gui.Form.dtpTo.Value(V.Screen.Form!dtpFrom.Value)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.DataTable.dtCusts$dtChild.Exists, =, True)
+	F.Data.DataView.Close("dtCusts", "dvMain")
+	F.Data.DataView.Close("dtCusts$dtChild", "dvChild")
+	F.Data.DataTable.Close("dtCusts$dtChild")
+	Gui.Form.gsgcCustGrid.MainView("gridCusts")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.CallSub(GSSInfo)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Refresh.End
+
+Program.Sub.GSSInfo.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+V.Local.sQuery.Declare(String, "")
+V.Local.sFiltr.Declare(String, "")
+V.Local.iDrcla.Declare(Long, 0)
+V.Local.fActHr.Declare(Float, 0.0)
+
+F.ODBC.Connection!conx.OpenCompanyConnection
+
+'We are going to grab the work order operations information that fall in the range of the dates that were populated
+F.Intrinsic.String.Build("Select Job, Suffix, Seq, Hours_actual from V_Job_Operations where LMO = 'L' and date_Start between '{0}' and '{1}'", V.Screen.Form!dtpFrom.Value.PervasiveDate, V.Screen.Form!dtpTo.Value.PervasiveDate, V.Local.sQuery)
+F.Data.DataTable.CreateFromSQL("dtOpen", "conx", V.Local.sQuery, True)
+
+F.Data.DataTable.AddColumn("dtOpen", "Customer", "String")
+F.Data.DataTable.AddExpressionColumn("dtOpen", "JobSuff", "String", "[Job] + '-' + [Suffix]")
+F.Data.DataTable.FillFromDictionary("dtOpen", "dicCust", "JobSuff", "Customer")
+
+F.Intrinsic.String.Build("Select Job, Suffix, Seq, Hours_actual from V_JOB_HIST_OPS where LMO = 'L' and date_Start between '{0}' and '{1}'", V.Screen.Form!dtpFrom.Value.PervasiveDate, V.Screen.Form!dtpTo.Value.PervasiveDate, V.Local.sQuery)
+F.Data.DataTable.CreateFromSQL("dtHist", "conx", V.Local.sQuery, True)
+
+F.Data.DataTable.AddColumn("dtHist", "Customer", "String")
+F.Data.DataTable.AddExpressionColumn("dtHist", "JobSuff", "String", "[Job] + '-' + [Suffix]")
+F.Data.DataTable.FillFromDictionary("dtHist", "dicCustHist", "JobSuff", "Customer")
+
+F.Data.DataTable.Merge("dtOpen", "dtHist", True, 1)
+
+F.Data.DataView.Create("dtHist", "dvAll", 22, "[Hours_Actual] > '0'", "")
+
+F.Data.DataView.ToDataTable("dtHist", "dvAll", "dtCusts$dtChild", True)
+
+F.Data.DataView.Close("dtHist", "dvAll")
+F.Data.DataTable.Close("dtHist")
+F.Data.DataTable.Close("dtOpen")
+
+'F.Intrinsic.String.Build("Select Job, Suffix, Seq, Hours_actual from V_Job_Operations where LMO = 'L' and date_Start between '{0}' and '{1}'", V.Screen.Form!dtpFrom.Value.PervasiveDate, V.Screen.Form!dtpTo.Value.PervasiveDate, V.Local.sQuery)
+'F.Data.DataTable.CreateFromSQL("dtCusts$dtChild", "conx", V.Local.sQuery, True)
+
+'For testing only!!!*************
+'F.Data.DataTable.SetValue("dtCusts$dtChild", -1, "HOURS_ACTUAL", "1")
+'**************************
+
+F.Intrinsic.Control.If(V.DataTable.dtCusts$dtChild.RowCount, =, 0)
+	F.Data.DataTable.Close("dtCusts$dtChild")
+	F.Intrinsic.UI.Msgbox("No work order data was found for the selected range", "DATA COLLECTION ERROR")
+	F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.EndIf
+
+'F.Data.DataTable.AddColumn("dtCusts$dtChild", "Customer", "String")
+'F.Data.DataTable.AddExpressionColumn("dtCusts$dtChild", "JobSuff", "String", "[Job] + '-' + [Suffix]")
+'F.Data.DataTable.FillFromDictionary("dtCusts$dtChild", "dicCust", "JobSuff", "Customer")
+
+'Now we loop through the child datatable and calculate the total hours that was spent per customer.
+F.Intrinsic.Control.For(V.Local.iDrcla, 0, V.DataTable.dtCusts.RowCount--, 1)
+	F.Intrinsic.String.Build("[CUSTOMER] = '{0}'", V.DataTable.dtCusts(V.Local.iDrcla).CUSTOMER!FieldValTrim, V.Local.sFiltr)
+	F.Data.DataTable.Compute("dtCusts$dtChild", "SUM(HOURS_ACTUAL)", V.Local.sFiltr, V.Local.fActHr)
+	F.Data.DataTable.SetValue("dtCusts", V.Local.iDrcla, "Time_Hours", V.Local.fActHr)
+F.Intrinsic.Control.Next(V.Local.iDrcla)
+
+''Make the relationship between parent and child
+'F.Data.DataTable.AddRelation("dtCusts", "Customer", "dtCusts$dtChild", "Customer", "WOInfo")
+
+F.ODBC.Connection!conx.Close
+
+F.Intrinsic.Control.CallSub(DisplayGrid)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.GSSInfo.End
+
+Program.Sub.PreLoading.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+
+F.ODBC.Connection!conx.OpenCompanyConnection
+
+'We can grab all the customers and the work order header information. 
+F.Data.DataTable.CreateFromSQL("dtCusts", "conx", "Select RTRIM(LTRIM(Customer)) as CUSTOMER, Name_Customer from V_CUSTOMER_MASTER", True)
+F.Data.DataTable.AddColumn("dtCusts", "Time_Hours", "Float", 0.0)
+F.Data.DataTable.AddRow("dtCusts", "CUSTOMER", "", "Name_Customer", "No Customer Associated", "Time_Hours", "0.0")
+
+F.Data.DataView.Create("dtCusts", "dvParent", 22, "[CUSTOMER] = ''", "")
+
+Gui.Form.gsgcCustGrid.AddGridviewFromDataview("gridCusts", "dtCusts", "dvParent")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridCusts", "Customer", "Caption", "Customer Number")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridCusts", "Name_Customer", "Caption", "Customer Name")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridCusts", "Time_Hours", "Caption", "Labor Hours")
+
+Gui.Form.gsgcCustGrid.MainView("gridCusts")
+
+F.Data.DataTable.CreateFromSQL("dtWOCusts", "conx", "Select Job, Suffix, RTRIM(LTRIM(Customer)) as Customer from V_JOB_HEADER", True)
+F.Data.DataTable.AddExpressionColumn("dtWOCusts", "WOCust", "String", "[Job] + '-' + [Suffix]")
+
+F.Data.Dictionary.CreateFromDataTable("dicCust", "dtWOCusts", "WOCust", "Customer")
+F.Data.Dictionary.SetDefaultReturn("dicCust", "")
+
+F.Data.DataTable.CreateFromSQL("dtHistCusts", "conx", "Select Job, Suffix, RTRIM(LTRIM(Customer)) as Customer from V_JOB_HIST_MAST", True)
+F.Data.DataTable.AddExpressionColumn("dtHistCusts", "WOCust", "String", "[Job] + '-' + [Suffix]")
+
+F.Data.Dictionary.CreateFromDataTable("dicCustHist", "dtHistCusts", "WOCust", "Customer")
+F.Data.Dictionary.SetDefaultReturn("dicCustHist", "")
+
+F.ODBC.Connection!conx.Close
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.PreLoading.End
+
+Program.Sub.DisplayGrid.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+
+F.Data.DataView.Create("dtCusts", "dvMain", 22, "Time_Hours > 0", "CUSTOMER ASC")
+F.Data.DataView.Create("dtCusts$dtChild", "dvChild", 22)
+
+Gui.Form.gsgcCustGrid.AddGridviewFromDataview("gridMain", "dtCusts", "dvMain")
+Gui.Form.gsgcCustGrid.AddGridviewFromDataview("gridChild", "dtCusts", "dvChild")
+
+Gui.Form.gsgcCustGrid.AddRelation("gridMain", "gridChild", "Customer", "Customer", "WOInfo")
+
+'All the column properties
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Customer", "Caption", "Customer Number")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Name_Customer", "Caption", "Customer Name")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "Caption", "Labor Hours")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Customer", "Width", "250")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Name_Customer", "Width", "750")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "Width", "200")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Customer", "AllowEdit", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Name_Customer", "AllowEdit", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "AllowEdit", "False")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Customer", "ReadOnly", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Name_Customer", "ReadOnly", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "ReadOnly", "True")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "DisplayCustomNumeric", "#####0.0000")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Customer", "HeaderFontBold", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Name_Customer", "HeaderFontBold", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridMain", "Time_Hours", "HeaderFontBold", "True")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "JobSuff", "Visible", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Customer", "Visible", "False")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Job", "Caption", "Job")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Suffix", "Caption", "Suffix")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Seq", "Caption", "Sequence")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "Caption", "Hours Spent")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Job", "Width", 250)
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Suffix", "Width", 100)
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Seq", "Width", 200)
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "Width", 200)
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Job", "AllowEdit", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Suffix", "AllowEdit", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Seq", "AllowEdit", "False")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "AllowEdit", "False")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Job", "ReadOnly", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Suffix", "ReadOnly", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Seq", "ReadOnly", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "ReadOnly", "True")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Job", "HeaderFontBold", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Suffix", "HeaderFontBold", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Seq", "HeaderFontBold", "True")
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "HeaderFontBold", "True")
+
+Gui.Form.gsgcCustGrid.SetColumnProperty("gridChild", "Hours_actual", "DisplayCustomNumeric", "#####0.0000")
+
+Gui.Form.gsgcCustGrid.MainView("gridMain")
+
+Gui.Form.gsgcCustGrid.Enabled(True)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.DisplayGrid.End
